@@ -33,6 +33,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.compose.AndroidFragment
 import androidx.pdf.viewer.fragment.PdfViewerFragment
+import kotlinx.coroutines.launch
 
 fun Context.findActivity(): Activity? {
     var context = this
@@ -57,6 +58,9 @@ fun PdfViewerScreen(
 
     val context = LocalContext.current
     val viewConfiguration = LocalViewConfiguration.current
+    
+    val coroutineScope = rememberCoroutineScope()
+    var tapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     
     DisposableEffect(isImmersiveMode) {
         val window = context.findActivity()?.window
@@ -93,9 +97,10 @@ fun PdfViewerScreen(
                 .pointerInput(Unit) {
                     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
                     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+                    var lastTapTime = 0L
                     
-                    while (true) {
-                        val tapEvent = awaitPointerEventScope {
+                    awaitPointerEventScope {
+                        while (true) {
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             var isTap = true
                             var upEvent: androidx.compose.ui.input.pointer.PointerInputChange? = null
@@ -122,20 +127,22 @@ fun PdfViewerScreen(
                             
                             if (isTap && upEvent != null) {
                                 if (upEvent.uptimeMillis - down.uptimeMillis < longPressTimeout) {
-                                    upEvent
-                                } else null
-                            } else null
-                        }
-                        
-                        if (tapEvent != null) {
-                            val secondTap = kotlinx.coroutines.withTimeoutOrNull(doubleTapTimeout) {
-                                awaitPointerEventScope {
-                                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    val timeSinceLastTap = upEvent.uptimeMillis - lastTapTime
+                                    if (timeSinceLastTap < doubleTapTimeout) {
+                                        // It's a double tap. Cancel the pending single tap job.
+                                        tapJob?.cancel()
+                                        tapJob = null
+                                        lastTapTime = 0L
+                                    } else {
+                                        // It's a single tap. Schedule a toggle.
+                                        lastTapTime = upEvent.uptimeMillis
+                                        tapJob?.cancel()
+                                        tapJob = coroutineScope.launch {
+                                            kotlinx.coroutines.delay(doubleTapTimeout)
+                                            isImmersiveMode = !isImmersiveMode
+                                        }
+                                    }
                                 }
-                            }
-                            
-                            if (secondTap == null) {
-                                isImmersiveMode = !isImmersiveMode
                             }
                         }
                     }
