@@ -1,0 +1,36 @@
+<<<<
+    LaunchedEffect(Unit) {
+        val dao = AppDatabase.getDatabase(context).pdfHistoryDao()
+        dao.getAllHistory().collectLatest { history ->
+====
+    val pullToRefreshState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+    if (pullToRefreshState.isRefreshing) {
+        LaunchedEffect(true) {
+            kotlinx.coroutines.delay(1000)
+            pullToRefreshState.endRefresh()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val dao = AppDatabase.getDatabase(context).pdfHistoryDao()
+        dao.getAllHistory().collectLatest { history ->
+>>>>
+<<<<
+        containerColor = MaterialTheme.colorScheme.background
+    ) { paddingValues ->
+        if (recentSections.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 24.dp),
+====
+        containerColor = MaterialTheme.colorScheme.background
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues).androidx.compose.ui.input.nestedscroll.nestedScroll(pullToRefreshState.nestedScrollConnection)) {
+        if (recentSections.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp),
+>>>>
