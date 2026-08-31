@@ -45,6 +45,8 @@ fun AiIntegrationScreen(navController: NavController) {
     var showProviderSheet by remember { mutableStateOf(false) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var showModelSheet by remember { mutableStateOf(false) }
+    val modelSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val providerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
     var availableModels by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var isLoadingModels by remember { mutableStateOf(false) }
@@ -253,11 +255,11 @@ fun AiIntegrationScreen(navController: NavController) {
                                 isTestingApi = false
                                 result.fold(
                                     onSuccess = { msg ->
-                                        testApiResult = "Success"
+                                        testApiResult = "API ready"
                                         snackbarHostState.showSnackbar("API Test Successful!")
                                     },
                                     onFailure = { err ->
-                                        testApiResult = "Failed"
+                                        testApiResult = "Not ready"
                                         snackbarHostState.showSnackbar("Test failed: ${err.message}")
                                     }
                                 )
@@ -276,7 +278,7 @@ fun AiIntegrationScreen(navController: NavController) {
                         Icon(
                             imageVector = Icons.Filled.Check,
                             contentDescription = null,
-                            tint = if (testApiResult == "Success") Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -286,7 +288,7 @@ fun AiIntegrationScreen(navController: NavController) {
                         Text(
                             testApiResult ?: if (aiApiKey.isNotEmpty()) "API ready" else "Not ready",
                             style = Typography.bodyMedium,
-                            color = if (testApiResult == "Success") Color(0xFF4CAF50) else if (testApiResult == "Failed") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            color = if (testApiResult == "Not ready") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -297,6 +299,7 @@ fun AiIntegrationScreen(navController: NavController) {
     if (showProviderSheet) {
         ModalBottomSheet(
             onDismissRequest = { showProviderSheet = false },
+            sheetState = providerSheetState,
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Column(
@@ -323,7 +326,10 @@ fun AiIntegrationScreen(navController: NavController) {
                             .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)
                             .clickable {
                                 settingsManager.setAiProvider(provider)
-                                showProviderSheet = false
+                                coroutineScope.launch {
+                                    providerSheetState.hide()
+                                    showProviderSheet = false
+                                }
                             }
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -403,6 +409,7 @@ fun AiIntegrationScreen(navController: NavController) {
     if (showModelSheet) {
         ModalBottomSheet(
             onDismissRequest = { showModelSheet = false },
+            sheetState = modelSheetState,
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             modifier = Modifier.fillMaxHeight(0.8f)
         ) {
@@ -447,7 +454,10 @@ fun AiIntegrationScreen(navController: NavController) {
                             .background(MaterialTheme.colorScheme.surfaceContainer)
                             .clickable {
                                 settingsManager.setAiModel(searchQuery)
-                                showModelSheet = false
+                                coroutineScope.launch {
+                                    modelSheetState.hide()
+                                    showModelSheet = false
+                                }
                             }
                             .padding(16.dp)
                     ) {
@@ -482,7 +492,10 @@ fun AiIntegrationScreen(navController: NavController) {
                                 .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)
                                 .clickable {
                                     settingsManager.setAiModel(modelId)
-                                    showModelSheet = false
+                                    coroutineScope.launch {
+                                        modelSheetState.hide()
+                                        showModelSheet = false
+                                    }
                                 }
                                 .padding(16.dp)
                         ) {
