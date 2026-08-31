@@ -27,12 +27,16 @@ import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import com.example.model.SettingsManager
 import com.example.ui.theme.Typography
+import com.example.api.AiApiService
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiIntegrationScreen(navController: NavController) {
     val context = LocalContext.current
     val settingsManager = remember { SettingsManager.getInstance(context) }
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     
     val aiProvider by settingsManager.aiProvider.collectAsState()
     val aiApiKey by settingsManager.aiApiKey.collectAsState()
@@ -41,8 +45,14 @@ fun AiIntegrationScreen(navController: NavController) {
     var showProviderSheet by remember { mutableStateOf(false) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var showModelSheet by remember { mutableStateOf(false) }
+    
+    var availableModels by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var isLoadingModels by remember { mutableStateOf(false) }
+    var isTestingApi by remember { mutableStateOf(false) }
+    var testApiResult by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -172,17 +182,52 @@ fun AiIntegrationScreen(navController: NavController) {
                             Text("Tap refresh to load available models", style = Typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    IconButton(
-                        onClick = { showModelSheet = true },
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp))
-                            .size(40.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "Refresh",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (isLoadingModels) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
                         )
+                    } else {
+                        IconButton(
+                            onClick = { 
+                                if (aiProvider == "Custom" || aiProvider.startsWith("None")) {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Please select Gemini or OpenAI to fetch models.") }
+                                    return@IconButton
+                                }
+                                if (aiApiKey.isBlank()) {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Please enter an API key first.") }
+                                    return@IconButton
+                                }
+                                isLoadingModels = true
+                                coroutineScope.launch {
+                                    val result = AiApiService.fetchModels(aiProvider, aiApiKey)
+                                    isLoadingModels = false
+                                    result.fold(
+                                        onSuccess = { models ->
+                                            availableModels = models
+                                            if (models.isNotEmpty()) {
+                                                showModelSheet = true
+                                            } else {
+                                                snackbarHostState.showSnackbar("No models found.")
+                                            }
+                                        },
+                                        onFailure = { err ->
+                                            snackbarHostState.showSnackbar("Failed: ${err.message}")
+                                        }
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp))
+                                .size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Refresh",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -192,23 +237,56 @@ fun AiIntegrationScreen(navController: NavController) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { /* Test API logic */ }
+                        .clickable {
+                            if (aiProvider == "Custom" || aiProvider.startsWith("None")) {
+                                coroutineScope.launch { snackbarHostState.showSnackbar("Please select Gemini or OpenAI to test.") }
+                                return@clickable
+                            }
+                            if (aiApiKey.isBlank()) {
+                                coroutineScope.launch { snackbarHostState.showSnackbar("Please enter an API key first.") }
+                                return@clickable
+                            }
+                            isTestingApi = true
+                            testApiResult = "Testing..."
+                            coroutineScope.launch {
+                                val result = AiApiService.testApi(aiProvider, aiApiKey)
+                                isTestingApi = false
+                                result.fold(
+                                    onSuccess = { msg ->
+                                        testApiResult = "Success"
+                                        snackbarHostState.showSnackbar("API Test Successful!")
+                                    },
+                                    onFailure = { err ->
+                                        testApiResult = "Failed"
+                                        snackbarHostState.showSnackbar("Test failed: ${err.message}")
+                                    }
+                                )
+                            }
+                        }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    if (isTestingApi) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = if (testApiResult == "Success") Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Test API", style = Typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            if (aiApiKey.isNotEmpty()) "API ready" else "Not ready",
+                            testApiResult ?: if (aiApiKey.isNotEmpty()) "API ready" else "Not ready",
                             style = Typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (testApiResult == "Success") Color(0xFF4CAF50) else if (testApiResult == "Failed") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -345,7 +423,7 @@ fun AiIntegrationScreen(navController: NavController) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search models") },
+                    placeholder = { Text(if (aiProvider == "Custom") "Enter custom model ID" else "Search models") },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -359,18 +437,41 @@ fun AiIntegrationScreen(navController: NavController) {
                     )
                 )
                 
-                val models = listOf(
-                    "Gemini 2.5 Flash" to "gemini-2.5-flash",
-                    "Gemini 2.5 Pro" to "gemini-2.5-pro",
-                    "Gemini 2.5 Flash Preview" to "gemini-2.5-flash-preview-tts",
-                    "Gemini 2.5 Pro Preview" to "gemini-2.5-pro-preview-tts",
-                    "Gemini 1.5 Flash" to "gemini-1.5-flash",
-                    "Gemini 1.5 Pro" to "gemini-1.5-pro"
-                )
+                if (aiProvider == "Custom" && searchQuery.isNotBlank()) {
+                    // Allow adding custom model directly
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .clickable {
+                                settingsManager.setAiModel(searchQuery)
+                                showModelSheet = false
+                            }
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            "Use custom model: $searchQuery",
+                            style = Typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
                 
-                val filteredModels = models.filter { it.first.contains(searchQuery, ignoreCase = true) || it.second.contains(searchQuery, ignoreCase = true) }
+                val filteredModels = availableModels.filter { it.first.contains(searchQuery, ignoreCase = true) || it.second.contains(searchQuery, ignoreCase = true) }
                 
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    if (filteredModels.isEmpty() && aiProvider != "Custom") {
+                        item {
+                            Text(
+                                "No models available. Try fetching them.",
+                                style = Typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
                     items(filteredModels) { (displayName, modelId) ->
                         val isSelected = modelId == aiModel
                         Column(
