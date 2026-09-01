@@ -41,6 +41,7 @@ import androidx.fragment.compose.AndroidFragment
 import androidx.pdf.viewer.fragment.PdfViewerFragment
 import com.example.api.AiApiService
 import com.example.model.SettingsManager
+import com.example.ui.components.MarkdownText
 import kotlinx.coroutines.launch
 
 fun Context.findActivity(): Activity? {
@@ -274,10 +275,16 @@ fun PdfViewerScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .padding(bottom = 24.dp)
+                        .fillMaxHeight(0.9f)
                 ) {
-                    Text(
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(bottom = 24.dp)
+                    ) {
+                        Text(
                         "AI Assistant",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary,
@@ -360,21 +367,18 @@ fun PdfViewerScreen(
                     } else if (aiResponse.isNotBlank()) {
                         SelectionContainer {
                             Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 200.dp)
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
+                                MarkdownText(
                                     text = aiResponse,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier
-                                        .padding(12.dp)
-                                        .verticalScroll(rememberScrollState())
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(16.dp)
                                 )
                             }
                         }
+                    }
                     }
                 }
             }
