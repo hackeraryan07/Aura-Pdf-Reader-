@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -101,6 +102,86 @@ object AiApiService {
                     }
                 }
                 else -> throw Exception("Cannot test Custom/None provider")
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun generateContent(provider: String, apiKey: String, model: String, prompt: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            if (apiKey.isBlank()) throw Exception("API Key is empty")
+            
+            when (provider) {
+                "Gemini" -> {
+                    val requestBodyJson = JSONObject().apply {
+                        put("contents", org.json.JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("parts", org.json.JSONArray().apply {
+                                    put(JSONObject().apply {
+                                        put("text", prompt)
+                                    })
+                                })
+                            })
+                        })
+                    }.toString()
+
+                    val request = Request.Builder()
+                        .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
+                        .post(okhttp3.RequestBody.create("application/json".toMediaType(), requestBodyJson))
+                        .build()
+                        
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string()
+                    if (response.isSuccessful && body != null) {
+                        val jsonObject = JSONObject(body)
+                        val candidates = jsonObject.optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val content = candidates.getJSONObject(0).optJSONObject("content")
+                            val parts = content?.optJSONArray("parts")
+                            if (parts != null && parts.length() > 0) {
+                                return@withContext Result.success(parts.getJSONObject(0).optString("text"))
+                            }
+                        }
+                        throw Exception("Could not parse Gemini response")
+                    } else {
+                        throw Exception(parseError(body) ?: "API Error: ${response.code}")
+                    }
+                }
+                "OpenAI" -> {
+                    val requestBodyJson = JSONObject().apply {
+                        put("model", model)
+                        put("messages", org.json.JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("role", "user")
+                                put("content", prompt)
+                            })
+                        })
+                    }.toString()
+
+                    val request = Request.Builder()
+                        .url("https://api.openai.com/v1/chat/completions")
+                        .addHeader("Authorization", "Bearer $apiKey")
+                        .post(okhttp3.RequestBody.create("application/json".toMediaType(), requestBodyJson))
+                        .build()
+
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string()
+                    if (response.isSuccessful && body != null) {
+                        val jsonObject = JSONObject(body)
+                        val choices = jsonObject.optJSONArray("choices")
+                        if (choices != null && choices.length() > 0) {
+                            val message = choices.getJSONObject(0).optJSONObject("message")
+                            if (message != null) {
+                                return@withContext Result.success(message.optString("content"))
+                            }
+                        }
+                        throw Exception("Could not parse OpenAI response")
+                    } else {
+                        throw Exception(parseError(body) ?: "API Error: ${response.code}")
+                    }
+                }
+                else -> throw Exception("Provider $provider not supported for text generation")
             }
         } catch (e: Exception) {
             Result.failure(e)
