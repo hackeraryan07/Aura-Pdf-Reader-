@@ -1,19 +1,25 @@
 package com.example.ui.screens
 
 import android.app.Activity
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -33,6 +39,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.compose.AndroidFragment
 import androidx.pdf.viewer.fragment.PdfViewerFragment
+import com.example.api.AiApiService
+import com.example.model.SettingsManager
+import com.example.ui.components.MarkdownText
+import kotlinx.coroutines.launch
 
 fun Context.findActivity(): Activity? {
     var context = this
@@ -50,10 +60,53 @@ fun PdfViewerScreen(
     uriString: String
 ) {
     var isImmersiveMode by remember { mutableStateOf(false) }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var pdfFragment by remember { mutableStateOf<PdfViewerFragment?>(null) }
+    
+    // AI States
+    var isAiModeActive by remember { mutableStateOf(false) }
+    var showAiSheet by remember { mutableStateOf(false) }
+    var capturedText by remember { mutableStateOf("") }
+    var aiResponse by remember { mutableStateOf("") }
+    var aiLoading by remember { mutableStateOf(false) }
+    var customPrompt by remember { mutableStateOf("") }
     
     val view = LocalView.current
     val context = LocalContext.current
     val viewConfiguration = LocalViewConfiguration.current
+    val coroutineScope = rememberCoroutineScope()
+    var tapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    
+    val settingsManager = remember { SettingsManager.getInstance(context) }
+    val aiProvider by settingsManager.aiProvider.collectAsState(initial = "None (Disabled)")
+    val aiApiKey by settingsManager.aiApiKey.collectAsState(initial = "")
+    val aiModel by settingsManager.aiModel.collectAsState(initial = "")
+
+    val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    
+    DisposableEffect(isAiModeActive) {
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            if (isAiModeActive) {
+                val clip = clipboardManager.primaryClip
+                if (clip != null && clip.itemCount > 0) {
+                    val text = clip.getItemAt(0).text?.toString()
+                    if (!text.isNullOrBlank()) {
+                        capturedText = text
+                        showAiSheet = true
+                        aiResponse = ""
+                        customPrompt = ""
+                    }
+                }
+            }
+        }
+        if (isAiModeActive) {
+            clipboardManager.addPrimaryClipChangedListener(listener)
+        }
+        onDispose {
+            clipboardManager.removePrimaryClipChangedListener(listener)
+        }
+    }
     
     DisposableEffect(isImmersiveMode) {
         val window = context.findActivity()?.window
@@ -84,13 +137,16 @@ fun PdfViewerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = topPadding)
+                .navigationBarsPadding()
+                .imePadding()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 .pointerInput(Unit) {
                     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
                     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+                    var lastTapTime = 0L
                     
-                    while (true) {
-                        val tapEvent = awaitPointerEventScope {
+                    awaitPointerEventScope {
+                        while (true) {
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             var isTap = true
                             var upEvent: androidx.compose.ui.input.pointer.PointerInputChange? = null
@@ -116,21 +172,22 @@ fun PdfViewerScreen(
                             }
                             
                             if (isTap && upEvent != null) {
-                                if (upEvent.uptimeMillis - down.uptimeMillis < longPressTimeout) {
-                                    upEvent
-                                } else null
-                            } else null
-                        }
-                        
-                        if (tapEvent != null) {
-                            val secondTap = kotlinx.coroutines.withTimeoutOrNull(doubleTapTimeout) {
-                                awaitPointerEventScope {
-                                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                val up = upEvent!!
+                                if ((up.uptimeMillis - down.uptimeMillis) < longPressTimeout) {
+                                    val timeSinceLastTap = up.uptimeMillis - lastTapTime
+                                    if (timeSinceLastTap < doubleTapTimeout) {
+                                        tapJob?.cancel()
+                                        tapJob = null
+                                        lastTapTime = 0L
+                                    } else {
+                                        lastTapTime = up.uptimeMillis
+                                        tapJob?.cancel()
+                                        tapJob = coroutineScope.launch {
+                                            kotlinx.coroutines.delay(doubleTapTimeout)
+                                            isImmersiveMode = !isImmersiveMode
+                                        }
+                                    }
                                 }
-                            }
-                            
-                            if (secondTap == null) {
-                                isImmersiveMode = !isImmersiveMode
                             }
                         }
                     }
@@ -139,7 +196,12 @@ fun PdfViewerScreen(
             AndroidFragment<PdfViewerFragment>(
                 modifier = Modifier.fillMaxSize(),
                 onUpdate = { fragment ->
-                    fragment.documentUri = Uri.parse(uriString)
+                    if (pdfFragment != fragment) {
+                        pdfFragment = fragment
+                    }
+                    if (fragment.documentUri?.toString() != uriString) {
+                        fragment.documentUri = Uri.parse(uriString)
+                    }
                 }
             )
         }
@@ -165,7 +227,30 @@ fun PdfViewerScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* TODO */ }) {
+                    IconButton(onClick = { 
+                        if (aiProvider.contains("Disabled")) {
+                            Toast.makeText(context, "Please configure AI API in Settings first.", Toast.LENGTH_LONG).show()
+                            return@IconButton
+                        }
+                        isAiModeActive = !isAiModeActive 
+                        if (isAiModeActive) {
+                            Toast.makeText(context, "AI Mode Active: Select text & copy it to ask AI.", Toast.LENGTH_LONG).show()
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.AutoAwesome, 
+                            contentDescription = "AI Assistant",
+                            tint = if (isAiModeActive) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                        )
+                    }
+                    IconButton(onClick = { 
+                        isSearchActive = !isSearchActive 
+                        pdfFragment?.let { frag ->
+                            if (frag.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                frag.isTextSearchActive = isSearchActive
+                            }
+                        }
+                    }) {
                         Icon(Icons.Default.Search, contentDescription = "Search in PDF")
                     }
                     IconButton(onClick = { /* TODO */ }) {
@@ -180,6 +265,123 @@ fun PdfViewerScreen(
                     scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
                 )
             )
+        }
+        
+        if (showAiSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showAiSheet = false },
+                sheetState = sheetState
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.9f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(bottom = 24.dp)
+                    ) {
+                        Text(
+                        "AI Assistant",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    
+                    Text("Selected Text:", style = MaterialTheme.typography.labelMedium)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, bottom = 16.dp)
+                    ) {
+                        Text(
+                            text = capturedText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    ) {
+                        val actions = listOf(
+                            "Explain" to "Explain the following text clearly: \n\n\"$capturedText\"",
+                            "Summarize" to "Summarize the following text briefly: \n\n\"$capturedText\"",
+                            "Translate" to "Translate the following text into English (or a highly spoken language if already English): \n\n\"$capturedText\""
+                        )
+                        actions.forEach { (label, prompt) ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    aiResponse = ""
+                                    aiLoading = true
+                                    coroutineScope.launch {
+                                        val result = AiApiService.generateContent(aiProvider, aiApiKey, aiModel, prompt)
+                                        aiResponse = result.getOrElse { "Error: ${it.message}" }
+                                        aiLoading = false
+                                    }
+                                },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = customPrompt,
+                        onValueChange = { customPrompt = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Ask a custom question...") },
+                        trailingIcon = {
+                            IconButton(
+                                onClick = {
+                                    if (customPrompt.isNotBlank()) {
+                                        val prompt = "$customPrompt\n\nContext text: \"$capturedText\""
+                                        aiResponse = ""
+                                        aiLoading = true
+                                        coroutineScope.launch {
+                                            val result = AiApiService.generateContent(aiProvider, aiApiKey, aiModel, prompt)
+                                            aiResponse = result.getOrElse { "Error: ${it.message}" }
+                                            aiLoading = false
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                            }
+                        },
+                        singleLine = true
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (aiLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (aiResponse.isNotBlank()) {
+                        SelectionContainer {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                MarkdownText(
+                                    text = aiResponse,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    }
+                }
+            }
         }
     }
 }

@@ -1,0 +1,44 @@
+name: Build Debug APK
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Decode Debug Keystore
+      env:
+        DEBUG_KEY: ${{ secrets.DEBUG_KEY }}
+      run: |
+        # Decode the base64 keystore from GitHub Secrets and save it to the root directory
+        echo "$DEBUG_KEY" | base64 --decode > debug.keystore
+        # Also copy it to the app directory to ensure the build script finds it regardless of path configuration
+        cp debug.keystore app/debug.keystore
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-apk
+        path: app/build/outputs/apk/debug/*.apk

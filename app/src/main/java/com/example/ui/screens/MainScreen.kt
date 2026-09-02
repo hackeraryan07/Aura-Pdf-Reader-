@@ -41,6 +41,7 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
     object Settings : Screen("settings", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
     object Search : Screen("search", "Search", Icons.Outlined.Description, Icons.Filled.Description)
     object Permission : Screen("permission", "Permission", Icons.Outlined.Description, Icons.Filled.Description)
+    object AiIntegration : Screen("ai_integration", "AI Integration", Icons.Outlined.Settings, Icons.Filled.Settings)
 }
 
 val items = listOf(
@@ -107,6 +108,7 @@ fun MainAppScreen() {
             composable(Screen.Settings.route) { SettingsScreen(navController) }
             composable(Screen.Search.route) { SearchScreen(navController) }
             composable(Screen.Permission.route) { PermissionScreen(navController) }
+            composable(Screen.AiIntegration.route) { AiIntegrationScreen(navController) }
             composable(
                 route = "pdf_viewer?uri={uri}",
                 arguments = listOf(navArgument("uri") { type = NavType.StringType })

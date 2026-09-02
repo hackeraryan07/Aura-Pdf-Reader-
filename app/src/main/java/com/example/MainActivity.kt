@@ -12,6 +12,7 @@ import com.example.ui.screens.MainAppScreen
 import com.example.ui.theme.AppTheme
 
 class MainActivity : FragmentActivity() {
+    // Checkpoint
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
