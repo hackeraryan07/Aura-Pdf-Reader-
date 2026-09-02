@@ -22,21 +22,6 @@ class SettingsManager(context: Context) {
     )
     val isPdfPreviewEnabled: StateFlow<Boolean> = _isPdfPreviewEnabled
 
-    private val _aiProvider = MutableStateFlow(
-        prefs.getString("ai_provider", "None (Disabled)") ?: "None (Disabled)"
-    )
-    val aiProvider: StateFlow<String> = _aiProvider
-
-    private val _aiApiKey = MutableStateFlow(
-        prefs.getString("ai_api_key", "") ?: ""
-    )
-    val aiApiKey: StateFlow<String> = _aiApiKey
-
-    private val _aiModel = MutableStateFlow(
-        prefs.getString("ai_model", "") ?: ""
-    )
-    val aiModel: StateFlow<String> = _aiModel
-
     fun setDarkMode(isDark: Boolean) {
         prefs.edit().putBoolean("is_dark_mode", isDark).apply()
         _isDarkMode.value = isDark
@@ -45,21 +30,6 @@ class SettingsManager(context: Context) {
     fun setPdfPreviewEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("is_pdf_preview_enabled", enabled).apply()
         _isPdfPreviewEnabled.value = enabled
-    }
-
-    fun setAiProvider(provider: String) {
-        prefs.edit().putString("ai_provider", provider).apply()
-        _aiProvider.value = provider
-    }
-
-    fun setAiApiKey(key: String) {
-        prefs.edit().putString("ai_api_key", key).apply()
-        _aiApiKey.value = key
-    }
-
-    fun setAiModel(model: String) {
-        prefs.edit().putString("ai_model", model).apply()
-        _aiModel.value = model
     }
 
     companion object {

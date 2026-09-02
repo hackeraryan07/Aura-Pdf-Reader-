@@ -86,7 +86,7 @@ dependencies {
   // implementation(libs.androidx.camera.view)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
-  implementation("androidx.pdf:pdf-viewer-fragment:1.0.0-beta01")
+  implementation("androidx.pdf:pdf-viewer-fragment:1.0.0-alpha04")
   implementation("androidx.fragment:fragment-compose:1.8.5")
   implementation("com.google.android.material:material:1.12.0")
   implementation(libs.androidx.compose.material3)
