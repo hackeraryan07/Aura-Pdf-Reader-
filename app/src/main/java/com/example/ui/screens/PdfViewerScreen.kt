@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -29,8 +28,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -64,7 +61,6 @@ fun PdfViewerScreen(
 ) {
     var isImmersiveMode by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
-    var isPanModeActive by remember { mutableStateOf(true) }
     var pdfFragment by remember { mutableStateOf<PdfViewerFragment?>(null) }
     
     // AI States
@@ -144,8 +140,7 @@ fun PdfViewerScreen(
                 .navigationBarsPadding()
                 .imePadding()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                .pointerHoverIcon(if (isPanModeActive) PointerIcon.Hand else PointerIcon.Text)
-                .pointerInput(isPanModeActive) {
+                .pointerInput(Unit) {
                     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
                     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
                     var lastTapTime = 0L
@@ -155,7 +150,6 @@ fun PdfViewerScreen(
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             var isTap = true
                             var upEvent: androidx.compose.ui.input.pointer.PointerInputChange? = null
-                            var isPan = false
                             
                             while (true) {
                                 val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -164,20 +158,9 @@ fun PdfViewerScreen(
                                 }
                                 val change = event.changes.firstOrNull { it.id == down.id }
                                 if (change != null) {
-                                    val distance = (change.position - down.position).getDistance()
-                                    if (distance > viewConfiguration.touchSlop) {
+                                    if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
                                         isTap = false
-                                        isPan = true
                                     }
-                                    
-                                    if (isPanModeActive && !isPan) {
-                                        val timeElapsed = change.uptimeMillis - down.uptimeMillis
-                                        // Consume just before Android triggers long-press (50ms buffer)
-                                        if (timeElapsed >= longPressTimeout - 50) {
-                                            change.consume()
-                                        }
-                                    }
-                                    
                                     if (!change.pressed) {
                                         upEvent = change
                                         break
@@ -244,20 +227,6 @@ fun PdfViewerScreen(
                     }
                 },
                 actions = {
-                    IconToggleButton(
-                        checked = isPanModeActive,
-                        onCheckedChange = { isPanModeActive = it },
-                        modifier = Modifier.background(
-                            if (isPanModeActive) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                    ) {
-                        Icon(
-                            Icons.Default.PanTool, 
-                            contentDescription = "Pan/Hand Mode",
-                            tint = if (isPanModeActive) MaterialTheme.colorScheme.onPrimaryContainer else LocalContentColor.current
-                        )
-                    }
                     IconButton(onClick = { 
                         if (aiProvider.contains("Disabled")) {
                             Toast.makeText(context, "Please configure AI API in Settings first.", Toast.LENGTH_LONG).show()
