@@ -145,7 +145,7 @@ fun PdfViewerScreen(
                 .imePadding()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 .pointerHoverIcon(if (isPanModeActive) PointerIcon.Hand else PointerIcon.Text)
-                .pointerInput(Unit) {
+                .pointerInput(isPanModeActive) {
                     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
                     val longPressTimeout = viewConfiguration.longPressTimeoutMillis
                     var lastTapTime = 0L
@@ -155,6 +155,7 @@ fun PdfViewerScreen(
                             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                             var isTap = true
                             var upEvent: androidx.compose.ui.input.pointer.PointerInputChange? = null
+                            var isPan = false
                             
                             while (true) {
                                 val event = awaitPointerEvent(pass = PointerEventPass.Initial)
@@ -163,9 +164,20 @@ fun PdfViewerScreen(
                                 }
                                 val change = event.changes.firstOrNull { it.id == down.id }
                                 if (change != null) {
-                                    if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                                    val distance = (change.position - down.position).getDistance()
+                                    if (distance > viewConfiguration.touchSlop) {
                                         isTap = false
+                                        isPan = true
                                     }
+                                    
+                                    if (isPanModeActive && !isPan) {
+                                        val timeElapsed = change.uptimeMillis - down.uptimeMillis
+                                        // Consume just before Android triggers long-press (50ms buffer)
+                                        if (timeElapsed >= longPressTimeout - 50) {
+                                            change.consume()
+                                        }
+                                    }
+                                    
                                     if (!change.pressed) {
                                         upEvent = change
                                         break
